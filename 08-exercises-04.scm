@@ -65,3 +65,100 @@
 
 (define (it-expt x n)
   (expt-iter 1 x n))
+
+;; Exercise 1.17
+(define (double a)
+  (+ a a))
+
+(define (halve a)
+  (/ a 2))
+
+(define (fast-mult a b)
+  (cond ((= b 0) 0)
+	((= b 1) a)
+	((even? b) (fast-mult (double a)
+			      (halve b)))
+	(else (+ a (fast-mult a (1- b))))))
+
+;; Exercise 1.18
+(define (mult-iter a b n)
+  (cond ((= n 0) a)
+	((even? n) (mult-iter
+		    a
+		    (double b)
+		    (halve n)))
+	(else (mult-iter
+	       (+ a b)
+	       b
+	       (1- n)))))
+
+(define (it-mult a b)
+  (mult-iter 0 a b))
+
+;; Exercise 1.19
+(define (fib-iter a b p q count)
+  (cond ((= count 0) b)
+	((and #t (even? count))
+	 (fib-iter a
+		   b
+		   (+ (* p p) (* q q))
+		   (+ (* p q) (* q q) (* q p))
+		   (halve count)))
+	(else (fib-iter (+ (* b q) (* a q) (* a p))
+			(+ (* b p) (* a q))
+			p
+			q
+			(1- count)))))
+
+(define (it-fib n)
+  (fib-iter 1 0 0 1 n))
+
+;; Exercise 1.21
+(define (divides? a b)
+  (= (euclidean-remainder a b) 0))
+
+(define (find-divisor n test-divisor)
+  (cond ((> (* test-divisor test-divisor) n) n)
+	((divides? n test-divisor) test-divisor)
+	(else (find-divisor n (1+ test-divisor)))))
+
+(define (smallest-divisor n)
+  (find-divisor n 2))
+
+;; Exercise 1.22
+(define (prime? n)
+  (= (smallest-divisor n) n))
+
+(define (report-prime elapsed-time)
+  (display " *** ")
+  (display elapsed-time))
+
+(define (start-prime-test n start-time)
+  (if (prime? n)
+      (report-prime (- (get-internal-real-time) start-time))))
+
+(define (timed-prime-test n)
+  (newline)
+  (display n)
+  (start-prime-test n (get-internal-real-time)))
+
+(define (find-three-primes-greater-than n)
+  (letrec ((PT (lambda (candidate needed)
+		 (cond ((= needed 0)
+			(newline))
+		       ((prime? candidate)
+			(timed-prime-test candidate)
+			(PT (1+ candidate) (1- needed)))
+		       (else (PT (1+ candidate) needed))))))
+    (PT n 3)))
+
+;; Exercise 1.23
+(define (next-divisor n)
+  (if (= n 2)
+      3
+      (+ n 2)))
+
+(define (find-divisor n test-divisor)
+  (cond ((> (* test-divisor test-divisor) n) n)
+	((divides? n test-divisor) test-divisor)
+	(else (find-divisor n (next-divisor test-divisor)))))
