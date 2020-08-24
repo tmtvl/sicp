@@ -154,3 +154,44 @@
 	       (if (pair? rbs)
 		   (total-weight rbs)
 		   rbs))))))
+
+;; Exercise 2.30
+(define (square-tree tree)
+  (cond ((null? tree) '())
+	((pair? (car tree))
+	 (cons (square-tree (car tree))
+	       (square-tree (cdr tree))))
+	(else (cons (square (car tree))
+		    (square-tree (cdr tree))))))
+
+(define (square-tree tree)
+  (cond ((null? tree) '())
+	((not (pair? tree))
+	 (square tree))
+	(else (cons (square-tree (car tree))
+		    (square-tree (cdr tree))))))
+
+(define (square-tree tree)
+  (map (lambda (i)
+	 (if (list? i)
+	     (square-tree i)
+	     (square i)))
+       tree))
+
+;; Exercise 2.31
+(define (tree-map f tree)
+  (map (lambda (i)
+	 (if (list? i)
+	     (tree-map f i)
+	     (f i)))
+       tree))
+
+;; Exercise 2.32
+(define (subsets s)
+  (if (null? s)
+      (list '())
+      (let ((rest (subsets (cdr s))))
+	(append rest
+		(map (lambda (ss)
+		       (cons (car s) ss))
+		     rest)))))
