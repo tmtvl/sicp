@@ -91,3 +91,19 @@
 	    ((eq? op 'reset)
 	     (lambda (x)
 	       (set! v x)))))))
+
+;; Exercise 3.7
+(define (make-joint acct pass1 pass2)
+  (lambda (p o)
+    (if (eq? p pass2)
+	(acct pass1 o)
+	"Incorrect password")))
+
+;; Exercise 3.8
+(define f
+  (let ((a 0)
+	(b 0))
+    (lambda (x)
+      (set! a b)
+      (set! b x)
+      a)))
