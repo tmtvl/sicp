@@ -520,3 +520,190 @@
 		 (add-streams (scale-stream integrand dt)
 			      int)))
   int)
+
+;; Exercise 3.73
+(define (RC R C dt)
+  (lambda (i v0)
+    (add-streams (scale-stream i R)
+		 (integral (scale-stream i (/ 1.0 C))
+			   v0 dt))))
+
+;; Exercise 3.74
+(define (sign-change-detector current previous)
+  (cond ((and (positive? current)
+	      (negative? previous)) 1)
+	((and (negative? current)
+	      (positive? previous)) -1)
+	(else 0)))
+
+(define (make-zero-crossings input-stream last-value)
+  (cons-stream
+   (sign-change-detector
+    (stream-car input-stream)
+    last-value)
+   (make-zero-crossings
+    (stream-cdr input-stream)
+    (stream-car input-stream))))
+
+(define (zero-crossings sense-data)
+  (make-zero-crossings sense-data 0))
+
+(define (zero-crossings sense-data)
+  (stream-map sign-change-detector
+	      sense-data
+	      (cons-stream
+	       (stream-car sense-data)
+	       sense-data)))
+
+;; Exercise 3.75
+(define (make-smooth-zero-crossings input-stream last-value last-avg)
+  (let ((avg (/ (+ (stream-car input-stream)
+		   last-value)
+		2)))
+    (cons-stream
+     (sign-change-detector avg last-avg)
+     (make-zero-crossings
+      (stream-cdr input-stream) (stream-car input-stream) avg))))
+
+;; Exercise 3.76
+(define (smooth-stream input-stream last-value)
+  (cons-stream
+   (/ (+ (stream-car input-stream) last-value)
+      2)
+   (smooth-stream (stream-cdr input-stream)
+		  (stream-car input-stream))))
+
+(define (make-smooth-zero-crossings input-stream)
+  (make-zero-crossings (smooth-stream input-stream 0) 0))
+
+
+;; Streams and Delayed Evaluation
+(define (integral delayed-integrand initial-value dt)
+  (define int
+    (cons-stream
+     initial-value
+     (let ((integrand (force delayed-integrand)))
+       (add-streams (scale-stream integrand dt) int))))
+  int)
+
+(define (solve f y0 dt)
+  (define y (integral (delay dy) y0 dt))
+  (define dy (stream-map f y))
+  y)
+
+;; Exercise 3.77
+(define (integral integrand initial-value dt)
+  (cons-stream
+   initial-value
+   (if (stream-null? integrand)
+       the-empty-stream
+       (integral (stream-cdr integrand)
+		 (+ (* dt (stream-car integrand))
+		    initial-value)
+		 dt))))
+
+(define (integral delayed-integrand initial-value dt)
+  (cons-stream
+   initial-value
+   (let ((integrand (force delayed-integrand)))
+     (if (stream-null? integrand)
+	 the-empty-stream
+	 (integral (delay (stream-cdr integrand))
+		   (+ (* dt (stream-car integrand))
+		      initial-value)
+		   dt)))))
+
+;; Exercise 3.78
+(define (solve-2nd a b dy0 y0 dt)
+  (define dy (integral (delay ddy) dy0 dt))
+  (define y (integral (delay dy) y0 dt))
+  (define ddy (add-streams (scale-stream dy a)
+			   (scale-stream y b)))
+  y)
+
+;; Exercise 3.79
+(define (solve-2nd f dy0 y0 dt)
+  (define dy (integral (delay ddy) dy0 dt))
+  (define y (integral (delay dy) y0 dt))
+  (define ddy (f dy y))
+  y)
+
+;; Exercise 3.80
+(define (RLC R L C dt)
+  (lambda (vc0 il0)
+    (define vc (integral (delay dvc) vc0 dt))
+    (define il (integral (delay dil) il0 dt))
+    (define dvc (scale-stream il (/ -1 C)))
+    (define dil (add-streams (scale-stream vc (/ 1 L))
+			     (scale-stream il (/ (- 0 R) L))))
+    (cons vc il)))
+
+(define rlc1 ((RLC 1 1 0.2 0.1) 10 0))
+
+
+;; Modularity of Functional Programs and Modularity of Objects
+(define random-numbers
+  (stream-map random
+	      (scale-stream ones 10000)))
+
+(define (map-successive-pairs f s)
+  (cons-stream
+   (f (stream-car s) (stream-car (stream-cdr s)))
+   (map-successive-pairs f (stream-cdr (stream-cdr s)))))
+
+(define cesaro-stream
+  (map-successive-pairs
+   (lambda (r1 r2) (= (gcd r1 r2) 1))
+   random-numbers))
+
+(define (monte-carlo experiment-stream passed failed)
+  (define (next passed failed)
+    (cons-stream
+     (/ passed (+ passed failed 0.0))
+     (monte-carlo
+      (stream-cdr experiment-stream) passed failed)))
+  (if (stream-car experiment-stream)
+      (next (1+ passed) failed)
+      (next passed (1+ failed))))
+
+(define pi-stream
+  (stream-map
+   (lambda (p) (sqrt (/ 6 p)))
+   (monte-carlo cesaro-stream 0 0)))
+
+;; Exercise 3.81
+(define (random-number-stream command-stream initial-value)
+  (define (rns cs)
+    (cond ((stream-null? cs) the-empty-stream)
+	  ((eq? (stream-car cs) 'generate)
+	   (cons-stream (random initial-value)
+			(rns (stream-cdr cs))))
+	  ((eq? (stream-car cs) 'reset)
+	   (random-number-stream (stream-cdr (stream-cdr cs))
+				 (stream-car (stream-cdr cs))))
+	  (else
+	   (error "Unknown command: RANDOM-NUMBER-STREAM"
+		  (stream-car cs)))))
+  (rns command-stream))
+
+;; Exercise 3.82
+(define (random-in-range low high)
+  (let ((range (- high low)))
+    (+ low (random range))))
+
+(define (estimate-integral-stream P x1 x2 y1 y2)
+  (define experiment-stream
+    (stream-map (lambda (x)
+		  (P (random-in-range x1 x2)
+		     (random-in-range y1 y2)))
+		ones))
+  (monte-carlo experiment-stream 0 0))
+
+(define pi-stream
+  (stream-map (lambda (x) (* x 4))
+	      (estimate-integral-stream
+	       (lambda (x y)
+		 (<= (+ (square (- x 5))
+			(square (- y 7)))
+		     9))
+	       2 8 4 10)))
