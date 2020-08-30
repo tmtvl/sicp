@@ -325,3 +325,198 @@
 
 (define ln2-series-three
   (accelerated-sequence euler-transform ln2-series))
+
+
+;; Infinite streams of pairs
+(define (pairs s t)
+  (cons-stream
+   (list (stream-car s) (stream-car t))
+   (interleave
+    (stream-map (lambda (x) (list (stream-car s) x))
+		(stream-cdr t))
+    (pairs (stream-cdr s) (stream-cdr t)))))
+
+(define (stream-append s1 s2)
+  (if (stream-null? s1)
+      s2
+      (cons-stream s1
+		   (stream-append (stream-cdr s1) s2))))
+
+(define (interleave s1 s2)
+  (if (stream-null? s1)
+      s2
+      (cons-stream (stream-car s1)
+		   (interleave s2 (stream-cdr s1)))))
+
+;; Exercise 3.67
+(define (pairs s t)
+  (cons-stream
+   (list (stream-car s) (stream-car t))
+   (interleave
+    (interleave
+     (stream-map (lambda (x) (list (stream-car s) x))
+		 (stream-cdr t))
+     (stream-map (lambda (x) (list (stream-car t) x))
+		 (stream-cdr s)))
+    (pairs (stream-cdr s) (stream-cdr t)))))
+
+;; Exercise 3.69
+(define (triples s t u)
+  (cons-stream
+   (list (stream-car s)
+	 (stream-car t)
+	 (stream-car u))
+   (interleave
+    (stream-map (lambda (x) (list (stream-car s)
+				  (stream-car t)
+				  x))
+		(stream-cdr u))
+    (interleave (triples s (stream-cdr t) (stream-cdr u))
+		(triples (stream-cdr s)
+			 (stream-cdr t)
+			 (stream-cdr u))))))
+
+(define (pythagorean-triple? t)
+  (let ((i (car t))
+	(j (cadr t))
+	(k (caddr t)))
+    (and (not (> i j))
+	 (= (+ (square i) (square j))
+	    (square k)))))
+
+(define pythagorean-triples
+  (stream-filter pythagorean-triple?
+		 (triples integers integers integers)))
+
+;; Exercise 3.70
+(define (merge-weighted s1 s2 weight)
+  (cond ((stream-null? s1) s2)
+	((stream-null? s2) s1)
+	(else
+	 (let ((a (weight (stream-car s1)))
+	       (b (weight (stream-car s2))))
+	   (cond ((> a b)
+		  (cons-stream
+		   (stream-car s2)
+		   (merge-weighted s1
+				   (stream-cdr s2)
+				   weight)))
+		 (else
+		  (cons-stream
+		   (stream-car s1)
+		   (merge-weighted (stream-cdr s1)
+				   s2
+				   weight))))))))
+
+(define (weighted-pairs s1 s2 weight)
+  (cons-stream
+   (list (stream-car s1) (stream-car s2))
+   (merge-weighted
+    (merge-weighted (stream-map (lambda (x) (list (stream-car s1) x))
+				(stream-cdr s2))
+		    (stream-map (lambda (x) (list x (stream-car s2)))
+				(stream-cdr s1))
+		    weight)
+    (weighted-pairs (stream-cdr s1)
+		    (stream-cdr s2)
+		    weight)
+    weight)))
+
+(define (lngtr p)
+  (<= (car p) (cadr p)))
+
+(define ints-ndiv-2-3-5
+  (stream-filter
+   (lambda (x)
+     (and (not (divisible? x 2))
+	  (not (divisible? x 3))
+	  (not (divisible? x 5))))
+   integers))
+
+(define three-seventy-a
+  (stream-filter lngtr
+		 (weighted-pairs integers
+				 integers
+				 (lambda (p)
+				   (+ (car p) (cadr p))))))
+
+(define three-seventy-b
+  (stream-filter lngtr
+		 (weighted-pairs ints-ndiv-2-3-5
+				 ints-ndiv-2-3-5
+				 (lambda (p)
+				   (let ((a (car p))
+					 (b (cadr p)))
+				     (+ (* 2 a)
+					(* 3 b)
+					(* 5 a b)))))))
+
+;; Exercise 3.71
+(define (ramanujan-weight p)
+  (let ((a (car p))
+	(b (cadr p)))
+    (+ (* a a a)
+       (* b b b))))
+
+(define ramanujan-stream
+  (stream-filter lngtr
+		 (weighted-pairs integers
+				 integers
+				 ramanujan-weight)))
+
+(define (duplicate-weight-stream s weight)
+  (cond ((or (stream-null? s)
+	     (stream-null? (stream-cdr s)))
+	 the-empty-stream)
+	((= (weight (stream-car s))
+	    (weight (stream-car (stream-cdr s))))
+	 (cons-stream (stream-car s)
+		      (duplicate-weight-stream (stream-cdr s) weight)))
+	(else (duplicate-weight-stream (stream-cdr s) weight))))
+
+(define ramanujan-numbers
+  (duplicate-weight-stream ramanujan-stream ramanujan-weight))
+
+;; Exercise 3.72
+(define (sum-of-squares p)
+  (let ((a (car p))
+	(b (cadr p)))
+    (+ (square a) (square b))))
+
+(define sos-weighted-integer-pairs
+  (stream-filter lngtr
+		 (weighted-pairs integers
+				 integers
+				 sum-of-squares)))
+
+(define (duplicate-weight-variants-stream s weight)
+  (cond ((or (stream-null? s)
+	     (stream-null? (stream-cdr s)))
+	 the-empty-stream)
+	((= (weight (stream-car s))
+	    (weight (stream-car (stream-cdr s))))
+	 (cons-stream (list (stream-car s)
+			    (stream-car (stream-cdr s)))
+		      (duplicate-weight-variants-stream (stream-cdr s) weight)))
+	(else (duplicate-weight-variants-stream (stream-cdr s) weight))))
+
+(define sos-duplicates
+  (duplicate-weight-variants-stream sos-weighted-integer-pairs sum-of-squares))
+
+(define (duplicate-sos-weight p)
+  (sum-of-squares (car p)))
+
+(define sos-triplicates
+  (stream-map
+   (lambda (lol)
+     (cons (caar lol) (cadr lol)))
+   (duplicate-weight-variants-stream sos-duplicates duplicate-sos-weight)))
+
+
+;; Streams as signals
+(define (integral integrand initial-value dt)
+  (define int
+    (cons-stream initial-value
+		 (add-streams (scale-stream integrand dt)
+			      int)))
+  int)
