@@ -12,9 +12,13 @@
 				       env))
 	((begin? exp)
 	 (eval-sequence (begin-actions exp) env))
-	((cond? exp) (eval (cond->if exp) env))
+	((cond? exp) (sicp-eval (cond->if exp) env))
+	((let? exp) (sicp-eval (let->combination exp) env))
+	((let*? exp) (sicp-eval (let*->nested-lets exp) env))
+	((and? exp) (eval-and exp env))
+	((or? exp) (eval-or exp env))
 	((application? exp)
-	 (sicp-apply (eval (operator exp) env)
+	 (sicp-apply (sicp-eval (operator exp) env)
 		     (list-of-values (operands exp) env)))
 	(else
 	 (error "Unknown expression type: SICP-EVAL" exp))))
@@ -233,3 +237,238 @@
 
 (define (louis-operands exp)
   (cddr exp))
+
+;; Exercise 4.3
+(define (dd-eval exp env)
+  (cond ((self-evaluating? exp) exp)
+	((has-package? (car exp))
+	 ((get 'eval (car exp)) exp env))
+	((application? exp)
+	 (sicp-apply (dd-eval (operator exp) env)
+		     (list-of-values (operands exp) env)))
+	(else
+	 (error "Unknown expression type: DD-EVAL" exp))))
+
+;; Exercise 4.4
+(define (and? exp)
+  (tagged-list? exp 'and))
+
+(define (and-clauses exp)
+  (cdr exp))
+
+(define (eval-and exp env)
+  (define (A clauses)
+    (cond ((null? clauses) 'true)
+	  ((false? (sicp-eval (car clauses) env)) 'false)
+	  (else (A (cdr clauses)))))
+  (A (and-clauses exp)))
+
+(define (or? exp)
+  (tagged-list? exp 'or))
+
+(define (or-clauses exp)
+  (cdr exp))
+
+(define (eval-or exp env)
+  (define (O clauses)
+    (cond ((null? clauses) #f)
+	  ((true? (sicp-eval (car clauses) env)) 'true)
+	  (else (O (cdr clauses)))))
+  (O (or-clauses exp)))
+
+;; Exercise 4.5
+(define (additional-syntax-clause? clause)
+  (eq? (car (cond-actions? clause)) '=>))
+
+(define (expand-clauses clauses)
+  (if (null? clauses)
+      'false
+      (let ((first (car clauses))
+	    (rest (cdr clauses)))
+	(cond ((cond-else-clause? first)
+	       (if (null? rest)
+		(sequence->exp (cond-actions first))
+		(error "ELSE clause isn't last: COND->IF" clauses)))
+	      ((additional-syntax-clause? first)
+	       (make-if (cond-predicate first)
+			(cons (cadr (cond-actions first))
+			      (cond-predicate first))))
+	      (else
+	       (make-if (cond-predicate first)
+			(sequence->exp (cond-actions first))
+			(expand-clauses rest)))))))
+
+;; Exercise 4.6
+(define (let? exp)
+  (tagged-list? exp 'let))
+
+(define (let-assignments exp)
+  (cadr exp))
+
+(define (let-body exp)
+  (caddr exp))
+
+(define (let->combination exp)
+  (cons
+   (make-lambda (map car (let-assignments exp))
+		(let-body exp))
+   (map cdr (let-assignments exp))))
+
+;; Exercise 4.7
+(define (let*? exp)
+  (tagged-list? exp 'let*))
+
+(define (make-let assignments body)
+  (list 'let assignments body))
+
+(define (let*->nested-lets exp)
+  (let ((assignments (let-assignments exp))
+	(body (let-body exp)))
+    (define (tnl assignments)
+      (if (null? assignments)
+	  body
+	  (make-let (list (car assignments))
+		    (tnl (cdr assignments)))))
+    (tnl assignments)))
+
+;; Exercise 4.8
+(define (named-let? exp)
+  (and (let? exp)
+       (symbol? (cadr exp))))
+
+(define (let-assignments exp)
+  (if (named-let? exp)
+      (caddr exp)
+      (cadr exp)))
+
+(define (let-body exp)
+  (if (named-let? exp)
+      (cadddr exp)
+      (caddr exp)))
+
+(define (let-name exp)
+  (cadr exp))
+
+(define (let->combination exp)
+  (if (named-let? exp)
+      (let ((lambda-args (cons (let-name exp)
+			       (map assignment-variable
+				    (let-assignments exp)))))
+	(cons (make-lambda lambda-args lambda-args)
+	      (cons (make-lambda (cdr lambda-args)
+				 (let-body exp))
+		    (map assignment-value
+			 (let-assignments exp)))))
+      (cons
+       (make-lambda (map assignment-variable
+			 (let-assignments exp))
+		    (let-body exp))
+       (map assignment-value (let-assignments exp)))))
+
+;; Exercise 4.9
+(define (while? exp)
+  (tagged-list? exp 'while))
+
+(define (while-cond exp)
+  (cadr exp))
+
+(define (while-body exp)
+  (caddr exp))
+
+(define (eval-while exp env)
+  (if (true? (sicp-eval (while-cond exp) env))
+      (begin (sicp-eval (while-body exp) env)
+	     (eval-while exp env))
+      'done))
+
+
+;; Evaluator Data Structures
+(define (true? exp)
+  (not (false? exp)))
+
+(define (false? exp)
+  (eq? exp 'false))
+
+(define (make-procedure parameters body env)
+  (list 'procedure parameters body env))
+
+(define (compound-procedure? p)
+  (tagged-list? p 'procedure))
+
+(define (procedure-parameters p)
+  (cadr p))
+
+(define (procedure-body p)
+  (caddr p))
+
+(define (procedure-environment p)
+  (cadddr p))
+
+(define (enclosing-environment env)
+  (cdr env))
+
+(define (first-frame env)
+  (car env))
+
+(define the-empty-environment '())
+
+(define (make-frame variables values)
+  (cons variables values))
+
+(define (frame-variables frame)
+  (car frame))
+
+(define (frame-values frame)
+  (cdr frame))
+
+(define (add-binding-to-frame! var val frame)
+  (set-car! frame (cons var (car frame)))
+  (set-cdr! frame (cons val (cdr frame))))
+
+(define (extend-environment vars vals base-env)
+  (cond ((= (length vars) (length vals))
+	 (cons (make-frame vars vals) base-env))
+	((< (length vars) (length vals))
+	 (error "Too many arguments supplied: EXTEND-ENVIRONMENT"
+		vars vals))
+	(else
+	 (error "Too few arguments supplied: EXTEND-ENVIRONMENT"
+		vars vals))))
+
+(define (lookup-variable-value var env)
+  (define (env-loop env)
+    (define (scan vars vals)
+      (cond ((null? vars)
+	     (env-loop (enclosing-environment env)))
+	    ((eq? var (car vars)) (car vals))
+	    (else (scan (cdr vars) (cdr vals)))))
+    (if (eq? env the-empty-environment)
+	(error "Unbound variable: LOOKUP-VARIABLE-VALUE" var)
+	(let ((frame (first-frame env)))
+	  (scan (frame-variables frame)
+		(frame-values frame)))))
+  (env-loop env))
+
+(define (set-variable-value! var val env)
+  (define (env-loop env)
+    (define (scan vars vals)
+      (cond ((null? vars)
+	     (env-loop (enclosing-environment env)))
+	    ((eq? var (car vars)) (set-car! vals val))
+	    (else (scan (cdr vars) (cdr vals)))))
+    (if (eq? env the-empty-environment)
+	(error "Unbound variable: SET-VARIABLE-VALUE!" var)
+	(let ((frame (first-frame env)))
+	  (scan (frame-variables frame)
+		(frame-values frame)))))
+  (env-loop env))
+
+(define (define-variable! var val env)
+  (let ((frame (first-frame env)))
+    (define (scan vars vals)
+      (cond ((null? vars)
+	     (add-binding-to-frame! var val frame))
+	    ((eq? var (car vars))
+	     (set-car! vals val))
+	    (else (scan (cdr vars) (cdr vals)))))
+    (scan (frame-variables frame) (frame-values frame))))
