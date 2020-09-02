@@ -476,39 +476,39 @@
     (scan (frame-variables frame) (frame-values frame))))
 
 ;; Exercise 4.11
-(define (alist-make-frame variables values)
-  (map cons variables values))
+(define (make-frame variables values)
+  (map list variables values))
 
-(define (alist-frame-variables frame)
+(define (frame-variables frame)
   (map car frame))
 
-(define (alist-frame-values frame)
+(define (frame-values frame)
   (map cdr frame))
 
-(define (alist-add-binding-to-frame! var val frame)
+(define (add-binding-to-frame! var val frame)
   (set-cdr! frame (cons (car frame) (cdr frame)))
   (set-car! frame (list var val)))
 
 ;; Exercise 4.12
-(define (alist-scan-frame frame var val update)
+(define (scan-frame frame var val update)
   (define (scan frame)
     (cond ((null? frame) #f)
 	  ((eq? var (caar frame))
 	   (if update
 	       (begin
-		 (set-cdr! (car frame) val)
+		 (set-cdr! (car frame) (list val))
 		 (cons #t val))
-	       (cons #t (cdr frame))))
+	       (cons #t (cadar frame))))
 	  (else (scan (cdr frame)))))
   (scan frame))
 
-(define (alist-search-frame frame var)
+(define (search-frame frame var)
   (scan-frame frame var #f #f))
 
-(define (alist-update-frame frame var val)
+(define (update-frame frame var val)
   (scan-frame frame var val #t))
 
-(define (alist-for-each-env f env)
+(define (for-each-env f env)
   (define (FEE env)
     (if (eq? env the-empty-environment)
 	#f
@@ -518,7 +518,7 @@
 	      (FEE (enclosing-environment env))))))
   (FEE env))
 
-(define (alist-lookup-variable-value var env)
+(define (lookup-variable-value var env)
   (let ((val (for-each-env
 	      (lambda (frame) (search-frame frame var))
 	      env)))
@@ -526,14 +526,14 @@
 	val
 	(error "Unbound variable: LOOKUP-VARIABLE-VALUE" var))))
 
-(define (alist-set-variable-value! var val env)
+(define (set-variable-value! var val env)
   (let ((updated-val (for-each-env
 	      (lambda (frame) (update-frame frame var val))
 	      env)))
     (if (not updated-val)
         (error "Unbound variable: SET-VARIABLE-VALUE!" var))))
 
-(define (alist-define-variable! var val env)
+(define (define-variable! var val env)
   (let ((defined-val (update-frame (first-frame env) var val)))
     (if (not defined-val)
 	(add-binding-to-frame! var val (first-frame env)))))
