@@ -1,3 +1,5 @@
+(define apply-in-underlying-scheme apply)
+
 ;; You could call this simply "eval", but depending on the Scheme
 ;; implementation you use (I like Guile), hilarity may ensue.
 (define (sicp-eval exp env)
@@ -5,7 +7,7 @@
 	((variable? exp) (lookup-variable-value exp env))
 	((quoted? exp) (text-of-quotation exp))
 	((assignment? exp) (eval-assignment exp env))
-	((definiton? exp) (eval-definition exp env))
+	((definition? exp) (eval-definition exp env))
 	((if? exp) (eval-if exp env))
 	((lambda? exp) (make-procedure (lambda-parameters exp)
 				       (lambda-body exp)
@@ -384,10 +386,10 @@
 
 ;; Evaluator Data Structures
 (define (true? exp)
-  (not (false? exp)))
+  (eq? exp #t))
 
 (define (false? exp)
-  (eq? exp 'false))
+  (eq? exp #f))
 
 (define (make-procedure parameters body env)
   (list 'procedure parameters body env))
@@ -472,3 +474,164 @@
 	     (set-car! vals val))
 	    (else (scan (cdr vars) (cdr vals)))))
     (scan (frame-variables frame) (frame-values frame))))
+
+;; Exercise 4.11
+(define (alist-make-frame variables values)
+  (map cons variables values))
+
+(define (alist-frame-variables frame)
+  (map car frame))
+
+(define (alist-frame-values frame)
+  (map cdr frame))
+
+(define (alist-add-binding-to-frame! var val frame)
+  (set-cdr! frame (cons (car frame) (cdr frame)))
+  (set-car! frame (list var val)))
+
+;; Exercise 4.12
+(define (alist-scan-frame frame var val update)
+  (define (scan frame)
+    (cond ((null? frame) #f)
+	  ((eq? var (caar frame))
+	   (if update
+	       (begin
+		 (set-cdr! (car frame) val)
+		 (cons #t val))
+	       (cons #t (cdr frame))))
+	  (else (scan (cdr frame)))))
+  (scan frame))
+
+(define (alist-search-frame frame var)
+  (scan-frame frame var #f #f))
+
+(define (alist-update-frame frame var val)
+  (scan-frame frame var val #t))
+
+(define (alist-for-each-env f env)
+  (define (FEE env)
+    (if (eq? env the-empty-environment)
+	#f
+	(let ((val (f (first-frame env))))
+	  (if val
+	      (cdr val)
+	      (FEE (enclosing-environment env))))))
+  (FEE env))
+
+(define (alist-lookup-variable-value var env)
+  (let ((val (for-each-env
+	      (lambda (frame) (search-frame frame var))
+	      env)))
+    (if val
+	val
+	(error "Unbound variable: LOOKUP-VARIABLE-VALUE" var))))
+
+(define (alist-set-variable-value! var val env)
+  (let ((updated-val (for-each-env
+	      (lambda (frame) (update-frame frame var val))
+	      env)))
+    (if (not updated-val)
+        (error "Unbound variable: SET-VARIABLE-VALUE!" var))))
+
+(define (alist-define-variable! var val env)
+  (let ((defined-val (update-frame (first-frame env) var val)))
+    (if (not defined-val)
+	(add-binding-to-frame! var val (first-frame env)))))
+
+;; Exercise 4.13
+(define (remove-binding-from-frame! var frame)
+  (define (R frame)
+    (cond ((null? frame)
+	   'done)
+	  ((eq? var (caar frame))
+	   (set! frame (cdr frame))
+	   (R frame))
+	  (else (R (cdr frame)))))
+  (R frame))
+
+(define (make-unbound! var env)
+  (remove-binding-from-frame! var (first-frame env)))
+
+
+;; Running the Evaluator as a Program
+(define (setup-environment)
+  (let ((initial-env
+	 (extend-environment (primitive-procedure-names)
+			     (primitive-procedure-objects)
+			     the-empty-environment)))
+    (define-variable! 'true #t initial-env)
+    (define-variable! 'false #f initial-env)
+    initial-env))
+
+(define (primitive-procedure? proc)
+  (tagged-list? proc 'primitive))
+
+(define (primitive-implementation proc)
+  (cadr proc))
+
+(define primitive-procedures
+  (list (list 'car car)
+	(list 'cdr cdr)
+	(list 'cons cons)
+	(list 'null? null?)
+	(list 'list list)
+	(list '+ +)
+	(list '- -)
+	(list '* *)
+	(list '/ /)
+        (list '1+ 1+)
+	(list '1- 1-)
+	(list 'eq? eq?)
+	(list 'equal? equal?)
+	(list 'number? number?)
+	(list 'string? string?)
+	(list 'symbol? symbol?)
+	(list 'cadr cadr)
+	(list 'cddr cddr)
+	(list 'caddr caddr)
+	(list 'cdddr cdddr)
+	(list 'cadddr cadddr)
+	(list 'cddddr cddddr)
+	(list 'set-car! set-car!)
+	(list 'set-cdr! set-cdr!)
+	(list 'exit exit)))
+
+(define (primitive-procedure-names)
+  (map car primitive-procedures))
+
+(define (primitive-procedure-objects)
+  (map (lambda (proc) (list 'primitive (cadr proc)))
+       primitive-procedures))
+
+(define (apply-primitive-procedure proc args)
+  (apply-in-underlying-scheme
+   (primitive-implementation proc) args))
+
+(define input-prompt ";;; M-Eval input:")
+(define output-prompt ";;; M-Eval value:")
+
+(define (driver-loop)
+  (prompt-for-input input-prompt)
+  (let ((input (read)))
+    (let ((output (sicp-eval input the-global-environment)))
+      (announce-output output-prompt)
+      (user-print output)))
+  (driver-loop))
+
+(define (prompt-for-input str)
+  (newline) (newline) (display str) (newline))
+
+(define (announce-output str)
+  (newline) (display str) (newline))
+
+(define (user-print object)
+  (if (compound-procedure? object)
+      (display (list
+		'compound-procedure
+		(procedure-parameters object)
+		(procedure-body object)
+		'<procedure-env>))
+      (display object)))
+
+(define the-global-environment (setup-environment))
+(driver-loop)
