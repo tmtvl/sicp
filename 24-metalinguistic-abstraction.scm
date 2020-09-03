@@ -280,7 +280,7 @@
 
 ;; Exercise 4.5
 (define (additional-syntax-clause? clause)
-  (eq? (car (cond-actions? clause)) '=>))
+  (eq? (car (cond-actions clause)) '=>))
 
 (define (expand-clauses clauses)
   (if (null? clauses)
@@ -294,7 +294,8 @@
 	      ((additional-syntax-clause? first)
 	       (make-if (cond-predicate first)
 			(cons (cadr (cond-actions first))
-			      (cond-predicate first))))
+			      (cond-predicate first))
+			(expand-clauses rest)))
 	      (else
 	       (make-if (cond-predicate first)
 			(sequence->exp (cond-actions first))
@@ -321,7 +322,7 @@
   (tagged-list? exp 'let*))
 
 (define (make-let assignments body)
-  (list 'let assignments body))
+  (append (list 'let assignments) body))
 
 (define (let*->nested-lets exp)
   (let ((assignments (let-assignments exp))
@@ -345,8 +346,14 @@
 
 (define (let-body exp)
   (if (named-let? exp)
-      (cadddr exp)
-      (caddr exp)))
+      (cdddr exp)
+      (cddr exp)))
+
+(define (let-assignment-variable exp)
+  (car exp))
+
+(define (let-assignment-value exp)
+  (cadr exp))
 
 (define (let-name exp)
   (cadr exp))
@@ -354,18 +361,18 @@
 (define (let->combination exp)
   (if (named-let? exp)
       (let ((lambda-args (cons (let-name exp)
-			       (map assignment-variable
+			       (map let-assignment-variable
 				    (let-assignments exp)))))
 	(cons (make-lambda lambda-args lambda-args)
 	      (cons (make-lambda (cdr lambda-args)
 				 (let-body exp))
-		    (map assignment-value
+		    (map let-assignment-value
 			 (let-assignments exp)))))
       (cons
-       (make-lambda (map assignment-variable
+       (make-lambda (map let-assignment-variable
 			 (let-assignments exp))
 		    (let-body exp))
-       (map assignment-value (let-assignments exp)))))
+       (map let-assignment-value (let-assignments exp)))))
 
 ;; Exercise 4.9
 (define (while? exp)
@@ -514,7 +521,7 @@
 	#f
 	(let ((val (f (first-frame env))))
 	  (if val
-	      (cdr val)
+	      val
 	      (FEE (enclosing-environment env))))))
   (FEE env))
 
@@ -523,7 +530,7 @@
 	      (lambda (frame) (search-frame frame var))
 	      env)))
     (if val
-	val
+	(cdr val)
 	(error "Unbound variable: LOOKUP-VARIABLE-VALUE" var))))
 
 (define (set-variable-value! var val env)
@@ -581,6 +588,9 @@
 	(list '/ /)
         (list '1+ 1+)
 	(list '1- 1-)
+	(list '= =)
+	(list '< <)
+	(list '> >)
 	(list 'eq? eq?)
 	(list 'equal? equal?)
 	(list 'number? number?)
@@ -634,4 +644,40 @@
       (display object)))
 
 (define the-global-environment (setup-environment))
+
+;; Exercise 4.16
+(define (lookup-variable-value var env)
+  (let ((val (for-each-env
+	      (lambda (frame) (search-frame frame var))
+	      env)))
+    (if (and val
+	     (not (eq? (cdr val) '*unassigned*)))
+	(cdr val)
+	(error "Unbound variable: LOOKUP-VARIABLE-VALUE" var))))
+
+(define (scan-out-defines proc-body)
+  (display proc-body)
+  (newline)
+  (define (SOD body definitions)
+    (if (and (not (null? body))
+	     (definition? (car body)))
+	(SOD (cdr body) (append definitions (list (car body))))
+	(make-let (map (lambda (d)
+			 (list (definition-variable d)
+			       ''*unassigned*))
+		       definitions)
+		  (append
+		   (map (lambda (d)
+			  (list 'set!
+				(definition-variable d)
+				(definition-value d)))
+			definitions)
+		   body))))
+  (if (definition? (car proc-body))
+      (list (SOD (cdr proc-body) (list (car proc-body))))
+      proc-body))
+
+(define (make-procedure parameters body env)
+  (list 'procedure parameters (scan-out-defines body) env))
+
 (driver-loop)
