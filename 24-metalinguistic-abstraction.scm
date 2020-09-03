@@ -643,8 +643,6 @@
 		'<procedure-env>))
       (display object)))
 
-(define the-global-environment (setup-environment))
-
 ;; Exercise 4.16
 (define (lookup-variable-value var env)
   (let ((val (for-each-env
@@ -679,5 +677,95 @@
 
 (define (make-procedure parameters body env)
   (list 'procedure parameters (scan-out-defines body) env))
+
+
+;; Separating Syntactic Analysis from Execution
+(define (sicp-eval exp env)
+  ((analyse exp) env))
+
+(define (analyse exp)
+  (cond ((self-evaluating? exp) (analyse-self-evaluating exp))
+	((quoted? exp) (analyse-quoted exp))
+	((variable? exp) (analyse-variable exp))
+	((assignment? exp) (analyse-assignment exp))
+	((definition? exp) (analyse-definition exp))
+	((if? exp) (analyse-if exp))
+	((lambda? exp) (analyse-lambda exp))
+	((begin? exp) (analyse-sequence (begin-actions exp)))
+	((cond? exp) (analyse (cond->if exp)))
+	((application? exp) (analyse-application exp))
+	(else (error "Unknown expression type: ANALYSE" exp))))
+
+(define (analyse-self-evaluating exp)
+  (lambda (env) exp))
+
+(define (analyse-quoted exp)
+  (let ((qval (text-of-quotation exp)))
+    (lambda (env) qval)))
+
+(define (analyse-variable exp)
+  (lambda (env) (lookup-variable-value exp env)))
+
+(define (analyse-assignment exp)
+  (let ((var (assignment-variable exp))
+	(vproc (analyse (assignment-value exp))))
+    (lambda (env)
+      (set-variable-value! var (vproc env) env)
+      'ok)))
+
+(define (analyse-definition exp)
+  (let ((var (definition-variable exp))
+	(vproc (analyse (definition-value exp))))
+    (lambda (env)
+      (define-variable! var (vproc env) env)
+      'ok)))
+
+(define (analyse-if exp)
+  (let ((pproc (analyse (if-predicate exp)))
+	(cproc (analyse (if-consequent exp)))
+	(aproc (analyse (if-alternative exp))))
+    (lambda (env) (if (true? (pproc env))
+		      (cproc env)
+		      (aproc env)))))
+
+(define (analyse-lambda exp)
+  (let ((vars (lambda-parameters exp))
+	(bproc (analyse-sequence (lambda-body exp))))
+    (lambda (env) (make-procedure vars bproc env))))
+
+(define (analyse-sequence exps)
+  (define (sequentially proc1 proc2)
+    (lambda (env) (proc1 env) (proc2 env)))
+  (define (loop first-proc rest-procs)
+    (if (null? rest-procs)
+	first-proc
+	(loop (sequentially first-proc (car rest-procs))
+	      (cdr rest-procs))))
+  (let ((procs (map analyse exps)))
+    (if (null? procs) (error "Empty sequence: ANALYSE"))
+    (loop (car procs) (cdr procs))))
+
+(define (execute-application proc args)
+  (cond ((primitive-procedure? proc)
+	 (apply proc args))
+	((compound-procedure? proc)
+	 ((procedure-body proc)
+	  (extend-environment
+	   (procedure-parameters proc)
+	   args
+	   (procedure-environment proc))))
+	(else
+	 (error "Unknown procedure type: EXECUTE-APPLICATION" proc))))
+
+(define (analyse-application exp)
+  (let ((fproc (analyse (operator exp)))
+	(aprocs (map analyse (operands exp))))
+    (lambda (env)
+      (execute-application
+       (fproc env)
+       (map (lambda (aproc) (aproc env))
+	    aprocs)))))
+
+(define the-global-environment (setup-environment))
 
 (driver-loop)
